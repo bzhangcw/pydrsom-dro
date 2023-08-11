@@ -1,9 +1,14 @@
+import logging
+
 import torch
 import time
 import glob
 import numpy as np
 import torch.nn.functional as F
 import cvxpy as cp
+
+# DEFAULT_SOLVER=cp.GUROBI
+DEFAULT_SOLVER = cp.OSQP
 
 
 def save_model(model, args, path):
@@ -51,7 +56,7 @@ def get_eta_by_cvxpy(loss_vec, lbda):
     prob = cp.Problem(objective, constraints)
 
     # The optimal objective value is returned by `prob.solve()`.
-    _ = prob.solve(solver=cp.GUROBI)
+    _ = prob.solve(solver=DEFAULT_SOLVER)
     # The optimal value for x is stored in `x.value`.
     return eta.value
 
@@ -61,7 +66,8 @@ def DRO_cross_entropy(predict, label, lbda):
     entropy_vec = loss_func(predict, label)
     try:
         eta = get_eta_by_cvxpy(entropy_vec.cpu().detach().numpy(), lbda)
-    except:
+    except Exception as e:
+        logging.exception(e)
         print("error in cvxpy")
         eta = get_eta(entropy_vec.cpu().detach().numpy(), lbda, 0, 0.05)
     loss_vec = chi_square_func(lbda, entropy_vec, torch.from_numpy(eta))

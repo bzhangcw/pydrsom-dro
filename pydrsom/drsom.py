@@ -292,7 +292,11 @@ class DRSOMB(torch.optim.Optimizer):
 
             if dim > 1:
                 a = [
-                    sum(coordinates(dim, j, scaler=np.exp(-s) * delta) for j in range(dim)) / 2
+                    sum(
+                        coordinates(dim, j, scaler=np.exp(-s) * delta)
+                        for j in range(dim)
+                    )
+                    / 2
                     for s in range(k_diag)
                 ]
             else:
@@ -477,7 +481,10 @@ class DRSOMB(torch.optim.Optimizer):
         else:
             directions = [self.use_fixed_momentum(self.fixed_momentum)]
         self.update_trust_region(
-            p_copy, directions, fx=loss.cpu().detach(), closure=closure,
+            p_copy,
+            directions,
+            fx=loss.cpu().detach(),
+            closure=closure,
         )
         # accept or not?
         acc_step = False

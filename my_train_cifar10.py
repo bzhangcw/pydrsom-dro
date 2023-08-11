@@ -43,7 +43,9 @@ def main():
     else:
         # get a scheduler
         scheduler = optim.lr_scheduler.StepLR(
-            optimizer, step_size=args.lrstep, gamma=args.lrcoeff,
+            optimizer,
+            step_size=args.lrstep,
+            gamma=args.lrcoeff,
         )
 
     if args.optim.startswith("drsom"):
@@ -66,7 +68,10 @@ def main():
                 scheduler.step()
                 print(f"lr scheduler steps: {scheduler.get_lr()}")
 
-            train_acc, train_loss, = train(
+            (
+                train_acc,
+                train_loss,
+            ) = train(
                 net, epoch, device, train_loader, args.optim, optimizer, criterion
             )
             test_acc, test_loss = test(net, device, test_loader, criterion)
