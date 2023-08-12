@@ -7,6 +7,8 @@ import torch
 import csv
 from torch.utils.data import DataLoader
 import argparse
+
+import utils
 from my_model import CNNModel, LogisticRegression
 from utils import *
 from torchvision import datasets, transforms
@@ -30,6 +32,13 @@ def make_args():
         choices=["MNIST", "FMNIST"],
         help="select dataset",
         default="FMNIST",
+    )
+    parser.add_argument(
+        "--imbalance",
+        required=False,
+        type=int,
+        help="whether to sample an imbalanced data, default true ",
+        default=1,
     )
     parser.add_argument(
         "--model",
@@ -93,12 +102,9 @@ def make_args():
     parser.add_argument(
         "--interval", required=False, type=int, default=50, help="logging interval"
     )
-    parser.add_argument("--lr", default=1e-3, type=float)
-
-    parser.add_argument("--out_dim", default=1)
-
-    parser.add_argument("--gamma", default=1e-3, type=float)
-    parser.add_argument("--momentum", default=0.9, type=float)
+    parser.add_argument("--lr", default=1e-3, type=float, help="learning rate")
+    parser.add_argument("--gamma", default=1e-3, type=float, help="hyper param for clipped method")
+    parser.add_argument("--momentum", default=0.9, type=float, help="momentum")
     parser.add_argument("--run_id", default=1, type=int, help="repetition id")
     add_parser_options(parser)
     args = parser.parse_args()
@@ -306,6 +312,9 @@ def main(args):
 
         test_data = datasets.MNIST(root="./data/", transform=transform, train=False)
 
+    if args.imbalance > 0:
+        print("create an imbalanced dataset")
+        train_data = utils.imbalance_sampling(train_data)
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     print("#" * 80)
     if args.vr_ratio > 0:
