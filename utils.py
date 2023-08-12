@@ -76,17 +76,26 @@ def DRO_cross_entropy(predict, label, lbda):
 
 
 def imbalance_sampling(dataset):
-    ratios = {k: np.random.rand() * 0.8 + 0.2 for k in dataset.targets.unique().numpy()}
+    # ratios = {k: np.random.rand() * 0.8 + 0.2 for k in dataset.targets.unique().numpy()}
+    imbalance_ratio = [0.738, 0.986, 0.446, 0.254, 0.768, 0.593, 0.918, 0.731, 0.929, 0.284]
+    ratios = dict(
+        zip(
+            dataset.targets.unique().numpy(),
+            imbalance_ratio
+        )
+    )
     # sample by the desired ratio
     bool_select = [np.random.rand() > 1 - ratios[u] for u in dataset.targets.numpy()]
     y = dataset.targets[bool_select]
     x = dataset.data[bool_select]
-    print(f"""sampling statistics:
+    print(
+        f"""sampling statistics:
     original: {np.histogram(dataset.targets)[0]}
     ρ       : {np.array(list(ratios.values())).round(3)}
     after   : {np.histogram(y)[0]}
     total   : {y.shape[0]}
-    """)
+    """
+    )
     dataset.data = x
     dataset.targets = y
-    return dataset
+    return dataset, imbalance_ratio

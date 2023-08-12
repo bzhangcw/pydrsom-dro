@@ -103,7 +103,9 @@ def make_args():
         "--interval", required=False, type=int, default=50, help="logging interval"
     )
     parser.add_argument("--lr", default=1e-3, type=float, help="learning rate")
-    parser.add_argument("--gamma", default=1e-3, type=float, help="hyper param for clipped method")
+    parser.add_argument(
+        "--gamma", default=1e-3, type=float, help="hyper param for clipped method"
+    )
     parser.add_argument("--momentum", default=0.9, type=float, help="momentum")
     parser.add_argument("--run_id", default=1, type=int, help="repetition id")
     add_parser_options(parser)
@@ -181,8 +183,8 @@ def train_drsom(dataloader, model, loss_fn, optimizer, logging_interval):
             if not backward:
                 return loss
             if (
-                    optimizer.qpmode in {DRSOMModeQP.AutomaticDiff, DRSOMModeQP.FiniteDiff}
-                    or DRSOM_VERBOSE
+                optimizer.qpmode in {DRSOMModeQP.AutomaticDiff, DRSOMModeQP.FiniteDiff}
+                or DRSOM_VERBOSE
             ):
                 # only need for hvp
                 loss.backward(create_graph=True)
@@ -220,20 +222,29 @@ def test(dataloader, model, loss_fn):
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
     test_loss, correct = 0, 0
+    arr_pred = []
     with torch.no_grad():
         for batch, (X, y) in enumerate(dataloader):
             X, y = X.to(device), y.to(device)
             outputs = model(X)
             _, predicted = outputs.max(1)
             test_loss += loss_fn(outputs, y).item()
-            correct += predicted.eq(y).sum().item()
+            arr_correct = predicted.eq(y)
+            arr_pred.extend(arr_correct.tolist())
+            correct += arr_correct.sum().item()
     test_loss /= num_batches
     correct /= size
     rstring = (
         f"Error: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n"
     )
     print(rstring)
-    result = {"acc": (100 * correct), "avg_loss": test_loss}
+    df = pd.DataFrame({"y": dataloader.dataset.targets, "yh": arr_pred})
+    dfa = df.groupby("y").agg({"yh": "count"})
+    dfb = df.groupby("y").agg({"yh": sum})
+    dfg = pd.DataFrame({"total": dfa["yh"], "correct": dfb["yh"]}).assign(
+        ratio=lambda df: df["correct"] / df["total"]
+    )
+    result = {"acc": (100 * correct), "avg_loss": test_loss, "df": dfg}
     return result
 
 
@@ -314,7 +325,10 @@ def main(args):
 
     if args.imbalance > 0:
         print("create an imbalanced dataset")
-        train_data = utils.imbalance_sampling(train_data)
+        train_data, imbalance_ratio = utils.imbalance_sampling(train_data)
+    else:
+        imbalance_ratio = None
+
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     print("#" * 80)
     if args.vr_ratio > 0:
@@ -384,7 +398,7 @@ def main(args):
     epoch_list = [10, 25, 40]
     for i in range(args.epoch):
         print("#" * 40 + f" {i + 1} " + "#" * 40)
-        if args.optim != 'drsom':
+        if args.optim != "drsom":
             adjust_lr(args.lr, epoch_list, i, optimizer)
         model.train()
 
@@ -420,6 +434,10 @@ def main(args):
             "avg_train_loss": all_avg_loss[i],
             "avg_train_acc": all_train_acc[i],
             "avg_test_acc": all_test_acc[i],
+            "per_class_total": rt["df"]["total"].tolist(),
+            "per_class_correct": rt["df"]["correct"].tolist(),
+            "per_class_success_rate": rt["df"]["ratio"].tolist(),
+            "per_class_training": imbalance_ratio,
             "t": i,
             **args.__dict__,
         }
@@ -428,6 +446,8 @@ def main(args):
         fo.write(json_str)
         fo.write("\n")
         fo.flush()
+
+    # save final accuracy
 
 
 if __name__ == "__main__":
