@@ -63,9 +63,9 @@ def drsom_timer(func):
 class TRS:
     eigvalsh = scipy.linalg.eigvalsh
     # lsolve = torch.linalg.solve
-    # lsolve = torch.solve
+    lsolve = torch.solve
 
-    lsolve = torch.linalg.solve
+    # lsolve = torch.linalg.solve
 
     @staticmethod
     def _norm(alpha, G):

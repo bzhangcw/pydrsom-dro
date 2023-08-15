@@ -52,7 +52,7 @@ def make_args():
         "--lossfunc",
         required=False,
         type=str,
-        choices=["dro", "usual"],
+        choices=["dro", "dro-cvar", "usual"],
         help="select loss function",
         default="dro",
     )
@@ -94,8 +94,8 @@ def make_args():
             then in probability γ we will use the vr iteration.
           """,
     )
-    parser.add_argument("--epoch", default=30, type=int, help="epoch number")
-    parser.add_argument("--batch_size", default=32, type=int, help="batch size")
+    parser.add_argument("--epoch", default=25, type=int, help="epoch number")
+    parser.add_argument("--batch_size", default=64, type=int, help="batch size")
     parser.add_argument(
         "--trained_model", default=None, help="the path to the saved trained model"
     )
@@ -125,6 +125,7 @@ def train(dataloader, name, model, loss_fn, optimizer, args, train_large_loader=
     avg_loss = 0
     iter_large = iter(train_large_loader) if train_large_loader is not None else None
     vr_batch_numbers = []
+    losses = []
     for batch, (X, y) in enumerate(dataloader):
         bool_switch = False
         if (iter_large is not None) and ((batch + 1) % args.vr_ratio == 0):
@@ -142,9 +143,12 @@ def train(dataloader, name, model, loss_fn, optimizer, args, train_large_loader=
             return loss
 
         # backpropagation
-        loss = optimizer.step(bool_switch=bool_switch, closure=closure)
+        if not bool_switch:
+            loss = optimizer.step(closure=closure)
+        else:
+            loss = optimizer.step(bool_switch=bool_switch, closure=closure)
         avg_loss += loss.item()
-
+        losses.append(loss.item())
         # compute prediction error
         outputs = model(X)
         _, predicted = outputs.max(1)
@@ -164,7 +168,7 @@ def train(dataloader, name, model, loss_fn, optimizer, args, train_large_loader=
     print("train batches: ", len(dataloader))
 
     et = time.time()
-    return et - st, avg_loss, accuracy
+    return et - st, avg_loss, accuracy, losses
 
 
 def train_drsom(dataloader, model, loss_fn, optimizer, logging_interval):
@@ -173,6 +177,7 @@ def train_drsom(dataloader, model, loss_fn, optimizer, logging_interval):
     correct = 0
     total = 0
     avg_loss = 0
+    losses = []
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
 
@@ -196,6 +201,7 @@ def train_drsom(dataloader, model, loss_fn, optimizer, logging_interval):
 
         loss = optimizer.step(closure=closure)
         avg_loss += loss.item()
+        losses.append(loss.item())
 
         # compute prediction error
         outputs = model(X)
@@ -214,7 +220,7 @@ def train_drsom(dataloader, model, loss_fn, optimizer, logging_interval):
     print("train batches: ", len(dataloader))
 
     et = time.time()
-    return et - st, avg_loss, accuracy
+    return et - st, avg_loss, accuracy, losses
 
 
 def test(dataloader, model, loss_fn):
@@ -277,6 +283,7 @@ def parse_algo(method, model, **kwargs):
     if "nsgd" == method.lower():
         algo = NormalizedSGD
         para = ("lr", "momentum", "vr")
+        return Algorithm(net_paras, algo, **{key: kwargs[key] for key in para})
 
     elif "sgd_clip" == method.lower():
         """
@@ -285,15 +292,17 @@ def parse_algo(method, model, **kwargs):
         """
         algo = SGDClip
         para = ("lr", "momentum", "gamma", "vr")
+        return Algorithm(net_paras, algo, **{key: kwargs[key] for key in para})
 
     elif "sgd" == method.lower():
-        algo = SGD
-        para = ("lr", "momentum")
-
+        from torch import optim
+        return optim.SGD(
+            net_paras,
+            kwargs["lr"],
+            momentum=kwargs["momentum"],
+        )
     else:
         raise NotImplementedError
-    return Algorithm(net_paras, algo, **{key: kwargs[key] for key in para})
-
 
 def main(args):
     print(f"Using [{device}] for the work")
@@ -359,6 +368,9 @@ def main(args):
     if args.lossfunc == "dro":
         loss_fn = lambda yh, y: DRO_cross_entropy(yh, y, lbda=0.1)
         print("use dro loss as the target !")
+    elif args.lossfunc == "dro-cvar":
+        loss_fn = lambda yh, y: CVaR_cross_entropy(yh, y, lbda=0.1)
+        print("use dro cvar as the target !")
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -395,14 +407,15 @@ def main(args):
     fo = open(f"{pathname}.json", "w")
     print(f"result file: {fo}")
 
-    epoch_list = [10, 25, 40]
+    epoch_list = [15, 40]
+    per_step_losses = []
     for i in range(args.epoch):
         print("#" * 40 + f" {i + 1} " + "#" * 40)
         if args.optim != "drsom":
             adjust_lr(args.lr, epoch_list, i, optimizer)
         model.train()
 
-        _, avg_loss, acc = train(
+        _, avg_loss, acc, losses = train(
             train_loader,
             args.optim,
             model,
@@ -428,7 +441,7 @@ def main(args):
         all_avg_loss.append(avg_loss)
         all_train_acc.append(acc)
         all_test_acc.append(rt["acc"])
-
+        per_step_losses = [*per_step_losses, *losses]
         # an extra details log for plotting
         record = {
             "avg_train_loss": all_avg_loss[i],
@@ -441,7 +454,8 @@ def main(args):
             "t": i,
             **args.__dict__,
         }
-
+        if i == args.epoch - 1:
+            record["per_step_losses"] = per_step_losses
         json_str = json.dumps(record, skipkeys=True)
         fo.write(json_str)
         fo.write("\n")

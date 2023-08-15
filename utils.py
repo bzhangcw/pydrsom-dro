@@ -17,6 +17,46 @@ def save_model(model, args, path):
     torch.save(model.state_dict(), args.save_path + "/" + path)
 
 
+def imbalance_sampling(dataset):
+    # ratios = {k: np.random.rand() * 0.8 + 0.2 for k in dataset.targets.unique().numpy()}
+    imbalance_ratio = [
+        0.738,
+        0.986,
+        0.446,
+        0.254,
+        0.768,
+        0.593,
+        0.918,
+        0.731,
+        0.929,
+        0.284,
+    ]
+    try:
+        ratios = dict(zip(sorted(dataset.targets.unique().numpy().tolist()), imbalance_ratio))
+        tt = dataset.targets.numpy()
+    except:
+        ratios = dict(zip(sorted(np.unique(dataset.targets).tolist()), imbalance_ratio))
+        tt = np.array(dataset.targets)
+    # sample by the desired ratio
+    bool_select = [np.random.rand() > 1 - ratios[u] for u in tt]
+    y = tt[bool_select]
+    x = dataset.data[bool_select]
+    print(
+        f"""sampling statistics:
+    original: {np.histogram(dataset.targets)[0]}
+    ρ       : {np.array(list(ratios.values())).round(3)}
+    after   : {np.histogram(y)[0]}
+    total   : {y.shape[0]}
+    """
+    )
+    dataset.data = x
+    dataset.targets = y
+    return dataset, imbalance_ratio
+
+
+######################
+# χ2 optimization
+######################
 def chi_square_func(lbda, loss, eta):
     obj = (loss - eta) / lbda + 2
     obj[obj < 0] = 0
@@ -31,18 +71,15 @@ def chi_square_grad(lbda, loss, eta):
     return grad
 
 
-def get_eta(loss_vec, lbda, init_eta=0.002, lr=0.08):
+def get_eta(loss_vec, lbda, grad_func, init_eta=0.002, lr=0.01):
     eta = init_eta
     iter = 0
-    grad_func = chi_square_grad
     grad = grad_func(lbda, loss_vec, eta).mean().item()
-    while abs(grad) > 1e-7 and iter < 1000:
+    while abs(grad) > 1e-5 and iter < 1000:
         eta = eta - lr * grad
         grad = grad_func(lbda, loss_vec, eta).mean().item()
         iter += 1
-
-    # assert abs(eta - get_eta_by_cvxpy(loss_vec, lbda)) < 1e-3
-    return np.array(eta)
+    return eta
 
 
 def get_eta_by_cvxpy(loss_vec, lbda):
@@ -69,33 +106,37 @@ def DRO_cross_entropy(predict, label, lbda):
     except Exception as e:
         logging.exception(e)
         print("error in cvxpy")
-        eta = get_eta(entropy_vec.cpu().detach().numpy(), lbda, 0, 0.05)
+        grad_func = chi_square_grad
+        obj_func = chi_square_func
+        eta = get_eta(entropy_vec.cpu().detach().numpy(), lbda, grad_func, 0, 0.05)
     loss_vec = chi_square_func(lbda, entropy_vec, torch.from_numpy(eta))
     loss = loss_vec.mean()
     return loss
 
 
-def imbalance_sampling(dataset):
-    # ratios = {k: np.random.rand() * 0.8 + 0.2 for k in dataset.targets.unique().numpy()}
-    imbalance_ratio = [0.738, 0.986, 0.446, 0.254, 0.768, 0.593, 0.918, 0.731, 0.929, 0.284]
-    ratios = dict(
-        zip(
-            dataset.targets.unique().numpy(),
-            imbalance_ratio
-        )
-    )
-    # sample by the desired ratio
-    bool_select = [np.random.rand() > 1 - ratios[u] for u in dataset.targets.numpy()]
-    y = dataset.targets[bool_select]
-    x = dataset.data[bool_select]
-    print(
-        f"""sampling statistics:
-    original: {np.histogram(dataset.targets)[0]}
-    ρ       : {np.array(list(ratios.values())).round(3)}
-    after   : {np.histogram(y)[0]}
-    total   : {y.shape[0]}
-    """
-    )
-    dataset.data = x
-    dataset.targets = y
-    return dataset, imbalance_ratio
+######################
+# CVaR optimization
+######################
+def CVaR_cross_entropy(predict, label, lbda):
+    loss_func = torch.nn.CrossEntropyLoss(reduction="none")
+    entropy_vec = loss_func(predict, label)
+    grad_func = smoothed_CVaR_grad
+    obj_func = smoothed_CVaR_func
+    vv = entropy_vec.cpu().detach().numpy()
+    eta = get_eta(vv, lbda, grad_func, 0, 0.05)
+    loss_vec = obj_func(lbda, entropy_vec, torch.from_numpy(np.array(eta)))
+    loss = loss_vec.mean()
+    return loss
+
+
+def smoothed_CVaR_func(lbda, loss, eta, alpha=0.02):
+    obj = (loss - eta) / lbda
+    obj = torch.log(1 - alpha + alpha * torch.exp(obj)) / alpha
+    obj = lbda * obj + eta
+    return obj
+
+
+def smoothed_CVaR_grad(lbda, loss, eta, alpha=0.02):
+    grad = (loss - eta) / lbda
+    grad = 1 - np.exp(grad) / (1 - alpha + alpha * np.exp(grad))
+    return grad

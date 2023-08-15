@@ -13,12 +13,28 @@ from __future__ import print_function
 
 import json
 
-from cifar10.util import *
-from utils import DRO_cross_entropy
+from utils_cifar import *
+from utils import DRO_cross_entropy, CVaR_cross_entropy
 
 
 def main():
     parser = get_parser()
+    parser.add_argument(
+        "--lossfunc",
+        required=False,
+        type=str,
+        choices=["dro", "dro-cvar", "usual"],
+        help="select loss function",
+        default="dro",
+    )
+    parser.add_argument(
+        "--imbalance",
+        required=False,
+        type=int,
+        help="whether to sample an imbalanced data, default true ",
+        default=1,
+    )
+
     args = parser.parse_args()
     print(json.dumps(args.__dict__, indent=2))
     train_loader, test_loader = build_dataset(args)
@@ -33,7 +49,14 @@ def main():
 
     net = build_model(args, device, ckpt=ckpt)
     # criterion = nn.CrossEntropyLoss()
-    criterion = lambda yh, y: DRO_cross_entropy(yh, y, lbda=0.1)
+    if args.lossfunc == "dro":
+        criterion = lambda yh, y: DRO_cross_entropy(yh, y, lbda=0.1)
+        print("use dro loss as the target !")
+    elif args.lossfunc == "dro-cvar":
+        criterion = lambda yh, y: CVaR_cross_entropy(yh, y, lbda=0.1)
+        print("use dro cvar as the target !")
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
 
     optimizer = create_optimizer(args, net, start_epoch=start_epoch)
 
@@ -50,7 +73,7 @@ def main():
 
     if args.optim.startswith("drsom"):
         log_name = (
-            f"[{args.model}]" + "-" + query_name(optimizer, args.optim, args, ckpt)
+                f"[{args.model}]" + "-" + query_name(optimizer, args.optim, args, ckpt)
         )
     else:
         log_name = get_ckpt_name(model=args.model, optimizer=args.optim, lr=args.lr)

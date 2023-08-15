@@ -10,8 +10,10 @@ from torch.utils.tensorboard import SummaryWriter
 from pydrsom.drsom_utils import *
 from pydrsom.drsom import DRSOMB as DRSOM
 from pydrsom.drsom_utils import add_parser_options, DRSOMDecayRules
-from .models import *
-
+from cifar10.models import *
+from utils import imbalance_sampling
+from first_order.alg import *
+import pandas as pd
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -98,6 +100,13 @@ def build_dataset(args):
     trainset = torchvision.datasets.CIFAR10(
         root="./data", train=True, download=True, transform=transform_train
     )
+
+    if args.imbalance > 0:
+        print("create an imbalanced dataset")
+        trainset, imbalance_ratio = imbalance_sampling(trainset)
+    else:
+        imbalance_ratio = None
+
     train_loader = DataLoader(
         trainset, batch_size=args.batch, shuffle=True, num_workers=2
     )
@@ -158,7 +167,7 @@ def create_optimizer(args, model, start_epoch=0):
         return DRSOM(model_params, **render_args(args))
     else:
         print("using clipping algorithms")
-        from clipping_algorithms.alg import Algorithm, NormalizedSGD, SGDClip
+        from first_order.alg import Algorithm, NormalizedSGD, SGDClip
 
         if "nsgd" == args.optim.lower():
             algo = NormalizedSGD
@@ -257,6 +266,7 @@ def test(net, device, data_loader, criterion):
     test_loss = 0
     correct = 0
     total = 0
+    arr_pred = []
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(data_loader):
             inputs, targets = inputs.to(device), targets.to(device)
@@ -266,9 +276,40 @@ def test(net, device, data_loader, criterion):
             test_loss += loss.item()
             _, predicted = outputs.max(1)
             total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            arr_correct = predicted.eq(targets)
+            correct += arr_correct.sum().item()
+            arr_pred.extend(arr_correct.tolist())
 
     accuracy = 100.0 * correct / total
     print(" test acc  %.3f" % accuracy)
     print(" test loss %.3f" % (test_loss / len(data_loader)))
+    df = pd.DataFrame(
+        {
+            "y": data_loader.dataset.targets,
+            "yh": arr_pred
+        }
+        )
+    dfa = df.groupby("y").agg(
+        {
+            "yh": "count"
+        }
+        )
+    dfb = df.groupby("y").agg(
+        {
+            "yh": sum
+        }
+        )
+    dfg = pd.DataFrame(
+        {
+            "total": dfa["yh"],
+            "correct": dfb["yh"]
+        }
+        ).assign(
+        ratio=lambda df: df["correct"] / df["total"]
+    )
+    result = {
+        "acc": (100 * correct),
+        "avg_loss": test_loss,
+        "df": dfg
+    }
     return accuracy, test_loss / len(data_loader)
