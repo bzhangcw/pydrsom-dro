@@ -108,6 +108,7 @@ class DRSOMB(torch.optim.Optimizer):
         self.decayrule: DRSOMDecayRules = decayrules
         self.adjrule: DRSOMAdjustRules = adjrules
         self.delta = float(os.environ.get("delta", 1e-2))
+        self.delta_dim = float(os.environ.get("delta_dim", 5))
 
         ##########################
         # weight decay of the past
@@ -414,6 +415,7 @@ class DRSOMB(torch.optim.Optimizer):
                     fx=fx,
                     c=c,
                     delta=self.delta,
+                    multiples=self.delta_dim
                 )
             else:
                 raise ValueError("not handled yet")

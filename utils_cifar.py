@@ -312,4 +312,5 @@ def test(net, device, data_loader, criterion):
         "avg_loss": test_loss,
         "df": dfg
     }
+    print(dfg)
     return accuracy, test_loss / len(data_loader)

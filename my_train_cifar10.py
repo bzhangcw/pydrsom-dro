@@ -53,7 +53,7 @@ def main():
         criterion = lambda yh, y: DRO_cross_entropy(yh, y, lbda=0.1)
         print("use dro loss as the target !")
     elif args.lossfunc == "dro-cvar":
-        criterion = lambda yh, y: CVaR_cross_entropy(yh, y, lbda=0.1)
+        criterion = lambda yh, y: CVaR_cross_entropy(yh, y, lbda=1.0)
         print("use dro cvar as the target !")
     else:
         criterion = torch.nn.CrossEntropyLoss()
@@ -81,8 +81,8 @@ def main():
     print(f"Using optimizer:\n {log_name}")
 
     writer = SummaryWriter(log_dir=os.path.join(args.tflogger, log_name))
-
-    for epoch in range(start_epoch, start_epoch + args.epoch):
+    epoch_intervals = list(range(start_epoch, start_epoch + args.epoch))
+    for epoch in epoch_intervals:
         try:
             if args.optim.startswith("drsom"):
                 pass
@@ -143,6 +143,7 @@ def main():
             stats = stats.sort_values(by="total", ascending=False)
             print(stats.to_markdown())
 
+    test_acc, test_loss = test(net, device, test_loader, criterion)
 
 if __name__ == "__main__":
     main()

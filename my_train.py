@@ -254,11 +254,10 @@ def test(dataloader, model, loss_fn):
     return result
 
 
-def adjust_lr(lr, epochs, epoch, optimizer):
+def adjust_lr(lr, epochs, epoch, optimizer, name=None):
     import bisect
-
     index = bisect.bisect_right(epochs, epoch)
-    lr_now = lr / (10 ** index)
+    lr_now = lr / (5 ** index)
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr_now
     print(f"lr now: {lr_now}")
@@ -369,7 +368,7 @@ def main(args):
         loss_fn = lambda yh, y: DRO_cross_entropy(yh, y, lbda=0.1)
         print("use dro loss as the target !")
     elif args.lossfunc == "dro-cvar":
-        loss_fn = lambda yh, y: CVaR_cross_entropy(yh, y, lbda=0.1)
+        loss_fn = lambda yh, y: CVaR_cross_entropy(yh, y, lbda=1.0)
         print("use dro cvar as the target !")
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
@@ -411,8 +410,7 @@ def main(args):
     per_step_losses = []
     for i in range(args.epoch):
         print("#" * 40 + f" {i + 1} " + "#" * 40)
-        if args.optim != "drsom":
-            adjust_lr(args.lr, epoch_list, i, optimizer)
+        adjust_lr(args.lr, epoch_list, i, optimizer, name=args.optim)
         model.train()
 
         _, avg_loss, acc, losses = train(

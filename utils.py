@@ -117,7 +117,7 @@ def DRO_cross_entropy(predict, label, lbda):
 ######################
 # CVaR optimization
 ######################
-def CVaR_cross_entropy(predict, label, lbda):
+def CVaR_cross_entropy(predict, label, lbda=1.0):
     loss_func = torch.nn.CrossEntropyLoss(reduction="none")
     entropy_vec = loss_func(predict, label)
     grad_func = smoothed_CVaR_grad
@@ -129,14 +129,14 @@ def CVaR_cross_entropy(predict, label, lbda):
     return loss
 
 
-def smoothed_CVaR_func(lbda, loss, eta, alpha=0.02):
+def smoothed_CVaR_func(lbda, loss, eta, alpha=0.05):
     obj = (loss - eta) / lbda
     obj = torch.log(1 - alpha + alpha * torch.exp(obj)) / alpha
     obj = lbda * obj + eta
     return obj
 
 
-def smoothed_CVaR_grad(lbda, loss, eta, alpha=0.02):
+def smoothed_CVaR_grad(lbda, loss, eta, alpha=0.05):
     grad = (loss - eta) / lbda
     grad = 1 - np.exp(grad) / (1 - alpha + alpha * np.exp(grad))
     return grad

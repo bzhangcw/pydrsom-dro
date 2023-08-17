@@ -76,9 +76,9 @@ for method in sorted(dfs.keys()):
         # label=method,  # RENAME.get(method.split("-")[0].lower()),
         linestyle=LINESTYLE.get(method.split("-")[0].lower()),
         marker=MARKER.get(method.split("-")[0].lower()),
-        markersize=6,
+        markersize=4,
         alpha=.9,
-        linewidth=1.2
+        linewidth=2.2
     )
 ax.set_yscale("log")
 fig.legend(
